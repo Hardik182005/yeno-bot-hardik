@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "timestamp": 1789880823.619,
+  "market": {
+    "id": "sample-btc-5m-market",
+    "secondsToClose": 84
+  },
+  "account": {
+    "cashUsd": 10,
+    "eligibleVolumeUsd": 0,
+    "completedCycles": 0,
+    "position": null
+  },
+  "rules": {
+    "maximumBuyCashUsd": 5,
+    "targetVolumeUsd": 1000,
+    "evaluationWindowHours": 24,
+    "onePositionAtATime": true,
+    "buyFeesIncludedInMaximum": true
+  },
+  "reference": {
+    "btcMidUsd": 80482.155,
+    "openingTargetUsd": 80424.946,
+    "observedAt": 1789880823.019,
+    "targetObservedAt": 1789880814.203,
+    "targetProvisional": false
+  },
+  "books": {
+    "YES": {
+      "bids": [[0.49, 100]],
+      "asks": [[0.50, 100]],
+      "minOrderSize": 5
+    },
+    "NO": {
+      "bids": [[0.49, 100]],
+      "asks": [[0.50, 100]],
+      "minOrderSize": 5
+    }
+  }
+}
