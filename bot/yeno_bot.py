@@ -68,6 +68,29 @@ def default_variants() -> list[dict[str, Any]]:
             for hold in (2.0, 5.0):
                 v.append({"fam": "LAG", "lb": lb, "edge": edge, "hold": hold,
                           "tau_lo": 20.0, "tau_hi": 280.0, "stop": 0.10, "max_spread": 0.03})
+    # FAV: House Bot v1 baseline, neighbourhood, and volatility-scaled versions
+    v.append({"fam": "FAV", "house": True, "tau_lo": 15.0, "tau_hi": 90.0, "gap": 50.0,
+              "max_ask": 0.90, "min_ask": 0.0, "stop": 0.10, "forced": 60.0, "max_loss": 0.40,
+              "cycles": 2})
+    for gap in (30.0, 80.0):
+        for max_ask in (0.90, 0.95):
+            v.append({"fam": "FAV", "house": True, "tau_lo": 15.0, "tau_hi": 90.0, "gap": gap,
+                      "max_ask": max_ask, "min_ask": 0.0, "stop": 0.10, "forced": 60.0,
+                      "max_loss": 0.40, "cycles": 2})
+    for gap in (50.0,):
+        for (tlo, thi, forced) in ((45.0, 150.0, 40.0), (15.0, 90.0, 30.0)):
+            v.append({"fam": "FAV", "house": True, "tau_lo": tlo, "tau_hi": thi, "gap": gap,
+                      "max_ask": 0.92, "min_ask": 0.0, "stop": 0.10, "forced": forced,
+                      "max_loss": 0.40, "cycles": 3})
+    for z, (tlo, thi), (lo, hi) in (
+        (1.0, (60.0, 150.0), (0.55, 0.90)),
+        (1.5, (60.0, 150.0), (0.70, 0.95)),
+        (1.0, (25.0, 90.0), (0.55, 0.90)),
+        (2.0, (25.0, 90.0), (0.80, 0.97)),
+    ):
+        v.append({"fam": "FAV", "house": False, "tau_lo": tlo, "tau_hi": thi, "z": z,
+                  "min_ask": lo, "max_ask": hi, "stop": 0.10, "forced": max(tlo - 10.0, 8.0),
+                  "max_loss": 0.40, "cycles": 3})
     for i, x in enumerate(v):
         x["id"] = i
     return v
