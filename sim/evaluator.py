@@ -136,3 +136,186 @@ class Result:
         }
 
 
+def run(
+    markets: list[dict],
+    decide: Callable[[dict], dict],
+    *,
+    query_interval: float = 0.1,
+    adverse: float = 0.0,
+    max_hours: float = 24.0,
+    stop_at_target: bool = True,
+) -> Result:
+    """Run one evaluation path (a chronological list of markets)."""
+    res = Result()
+    cash = START_CASH
+    peak = cash
+    volume = 0.0
+    cycles = 0
+    pos: Position | None = None
+    if not markets:
+        return res
+    t0 = markets[0]["start"]
+    deadline = t0 + max_hours * 3600
+
+    for mk in markets:
+        if mk["start"] >= deadline:
+            break
+        mid = mk["slug"]
+        end = mk["end"]
+        T, BP, BS, AP, AS = mk["t"], mk["bp"], mk["bs"], mk["ap"], mk["as"]
+        ref_t, ref_p = mk["ref_t"], mk["ref_p"]
+        target = mk.get("target")
+        ri = 0
+        nref = len(ref_t)
+        ref = None
+        pending = None  # (exec_after, action dict)
+        last_q = -math.inf
+
+        def ladders(i: int):
+            """(yes_bids, yes_asks, no_bids, no_asks) as [(price, size)] lists."""
+            yb = [(float(p), float(q)) for p, q in zip(BP[i], BS[i]) if p == p and q > 0]
+            ya = [(float(p), float(q)) for p, q in zip(AP[i], AS[i]) if p == p and q > 0]
+            nb = [(round(1 - p, 4), q) for p, q in ya]
+            na = [(round(1 - p, 4), q) for p, q in yb]
+            return yb, ya, nb, na
+
+        def observation(t: float, lad) -> dict[str, Any]:
+            yb, ya, nb, na = lad
+            reference = None
+            if ref is not None:
+                reference = {"btcMidUsd": ref[1], "observedAt": ref[0]}
+                if target is not None and target[0] <= t:
+                    reference["openingTargetUsd"] = target[1]
+                    reference["targetObservedAt"] = target[0]
+                    reference["targetProvisional"] = False
+                else:
+                    reference["targetProvisional"] = True
+            return {
+                "schemaVersion": 1,
+                "timestamp": t,
+                "market": {"id": mid, "secondsToClose": round(end - t, 3)},
+                "account": {
+                    "cashUsd": round(cash, 6),
+                    "eligibleVolumeUsd": round(volume, 6),
+                    "completedCycles": cycles,
+                    "position": pos.as_dict() if pos else None,
+                },
+                "rules": {
+                    "maximumBuyCashUsd": MAX_BUY,
+                    "targetVolumeUsd": TARGET,
+                    "evaluationWindowHours": 24,
+                    "onePositionAtATime": True,
+                    "buyFeesIncludedInMaximum": True,
+                },
+                "reference": reference,
+                "books": {
+                    "YES": {"bids": [list(x) for x in yb], "asks": [list(x) for x in ya], "minOrderSize": MIN_ORDER},
+                    "NO": {"bids": [list(x) for x in nb], "asks": [list(x) for x in na], "minOrderSize": MIN_ORDER},
+                },
+            }
+
+        for i in range(len(T)):
+            t = float(T[i])
+            if t >= end or t >= deadline:
+                break
+            while ri < nref and ref_t[ri] <= t:
+                ref = (float(ref_t[ri]), float(ref_p[ri]))
+                ri += 1
+            lad = None
+
+            # 1) execute a pending action against this later update of its own outcome
+            if pending is not None and t >= pending[0]:
+                act = pending[1]
+                lad = ladders(i)
+                k = 0 if act["_outcome"] == "YES" else 2
+                bids, asks = lad[k], lad[k + 1]
+                pending = None
+                if act["action"] == "BUY":
+                    if end - t <= ENTRY_CUTOFF or pos is not None:
+                        res.rejected += 1
+                    else:
+                        budget = min(float(act["maxCashUsd"]), cash, MAX_BUY)
+                        fills = fill_buy(asks, budget, adverse)
+                        sh = sum(q for _, q in fills)
+                        if sh < MIN_ORDER - 1e-9:
+                            res.rejected += 1  # below minOrderSize (or no asks)
+                        else:
+                            g = sum(p * q for p, q in fills)
+                            f = fees(fills)
+                            cash -= g + f
+                            pos = Position(mid, act["outcome"], sh, g, f)
+                elif act["action"] == "SELL" and pos is not None:
+                    fills = fill_sell(bids, pos.shares, adverse)
+                    if not fills:
+                        res.rejected += 1
+                    else:
+                        sh = sum(q for _, q in fills)
+                        g = sum(p * q for p, q in fills)
+                        f = fees(fills)
+                        cash += g - f
+                        pos.shares -= sh
+                        pos.sell_gross_usd += g
+                        pos.sell_fees_usd += f
+                        if pos.shares <= DUST:
+                            pnl = pos.sell_gross_usd - pos.sell_fees_usd - pos.buy_gross_usd - pos.buy_fees_usd
+                            res.cycle_pnls.append(pnl)
+                            if pnl >= 0:
+                                res.wins += 1
+                            else:
+                                res.losses += 1
+                            volume += pos.buy_gross_usd + pos.sell_gross_usd
+                            cycles += 1
+                            pos = None
+                            peak = max(peak, cash)
+                            res.max_drawdown = max(res.max_drawdown, peak - cash)
+                            if volume >= TARGET - 1e-9 and res.time_to_target_h is None:
+                                res.qualified = True
+                                res.time_to_target_h = (t - t0) / 3600
+                                if stop_at_target:
+                                    res.cash, res.volume, res.cycles = cash, volume, cycles
+                                    res.flat_at_end = True
+                                    return res
+
+            # 2) ask the bot when nothing is pending. Queries are triggered by a
+            #    book update, so the book the bot sees is always fresh.
+            if pending is None and t - last_q >= query_interval:
+                if True:
+                    last_q = t
+                    res.queries += 1
+                    if lad is None:
+                        lad = ladders(i)
+                    try:
+                        d = decide(observation(t, lad))
+                    except Exception:
+                        res.errors += 1
+                        d = {"action": "HOLD"}
+                    a = d.get("action") if isinstance(d, dict) else None
+                    if a == "BUY":
+                        oc = d.get("outcome")
+                        try:
+                            mc = float(d.get("maxCashUsd", 0))
+                        except (TypeError, ValueError):
+                            mc = 0
+                        if pos is None and oc in OUTCOMES and 0 < mc <= MAX_BUY + 1e-9 and mc <= cash + 1e-9:
+                            pending = (t + LATENCY, {"action": "BUY", "outcome": oc, "maxCashUsd": mc, "_outcome": oc})
+                        else:
+                            res.rejected += 1
+                    elif a == "SELL":
+                        if pos is not None:
+                            pending = (t + LATENCY, {"action": "SELL", "_outcome": pos.outcome})
+                        else:
+                            res.rejected += 1
+
+        # market closed: unsold inventory settles (no volume credit, cycle lost)
+        if pos is not None:
+            win = 1.0 if pos.outcome == mk["winner"] else 0.0
+            cash += pos.shares * win
+            res.settled_positions += 1
+            res.cycle_pnls.append(pos.sell_gross_usd - pos.sell_fees_usd + pos.shares * win - pos.buy_gross_usd - pos.buy_fees_usd)
+            pos = None
+            peak = max(peak, cash)
+            res.max_drawdown = max(res.max_drawdown, peak - cash)
+
+    res.cash, res.volume, res.cycles = cash, volume, cycles
+    res.flat_at_end = pos is None
+    return res
