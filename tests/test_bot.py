@@ -130,6 +130,27 @@ class ContractTests(unittest.TestCase):
             self.assertTrue(valid(d, 3.0), d)
 
 
+class HttpTests(unittest.TestCase):
+    def test_http_endpoint(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), MOD.Handler)
+        th = threading.Thread(target=server.serve_forever, daemon=True)
+        th.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_address[1]}/decide"
+            req = urllib.request.Request(url, method="POST", data=json.dumps(SAMPLE).encode(),
+                                         headers={"Content-Type": "application/json"})
+            t0 = time.perf_counter()
+            with urllib.request.urlopen(req, timeout=1) as r:
+                payload = json.loads(r.read())
+            self.assertLess(time.perf_counter() - t0, 0.2)
+            self.assertTrue(valid(payload))
+            bad = urllib.request.Request(url.replace("/decide", "/nope"), method="POST", data=b"{}")
+            with self.assertRaises(urllib.error.HTTPError):
+                urllib.request.urlopen(bad, timeout=1)
+        finally:
+            server.shutdown()
+            server.server_close()
+
 
 if __name__ == "__main__":
     unittest.main()
