@@ -134,3 +134,50 @@ def sim_sell(bids, shares: float):
         if left <= 1e-9:
             break
     return sum(q for _, q in fills), sum(p * q for p, q in fills), fees(fills)
+
+class Stats:
+    """Exponentially decayed ratio estimator of PnL per $ of eligible volume."""
+    def __init__(self, decay: float) -> None:
+        self.k = 1.0 - 1.0 / decay
+        self.n = 0.0
+        self.pnl = 0.0
+        self.vol = 0.0
+        self.pnl2 = 0.0
+        self.pv = 0.0
+        self.vol2 = 0.0
+        self.raw_n = 0
+        self.raw_vol = 0.0
+        self.rn = 0.0
+        self.ret2 = 0.0
+        self.dur = 0.0
+
+    def add(self, pnl: float, vol: float, dur: float, cost: float = 0.0) -> None:
+        k = self.k
+        if cost > 0:
+            ret = pnl / cost
+            self.rn = self.rn * k + 1
+            self.ret2 = self.ret2 * k + ret * ret
+        self.n = self.n * k + 1
+        self.pnl = self.pnl * k + pnl
+        self.vol = self.vol * k + vol
+        self.pnl2 = self.pnl2 * k + pnl * pnl
+        self.pv = self.pv * k + pnl * vol
+        self.vol2 = self.vol2 * k + vol * vol
+        self.dur = self.dur * k + dur
+        self.raw_n += 1
+        self.raw_vol += vol
+
+    def ret_sd(self) -> float:
+        return math.sqrt(self.ret2 / self.rn) if self.rn > 0 else 0.3
+
+    def rate_per_hour(self, hours: float) -> float:
+        return self.raw_vol / max(hours, 0.25)
+
+    def ratio(self, prior_r: float, prior_w: float) -> tuple[float, float]:
+        vol = self.vol + prior_w
+        r = (self.pnl + prior_r * prior_w) / vol if vol > 0 else prior_r
+        if self.n < 2 or self.vol <= 0:
+            return r, 1.0
+        rv = (self.pnl2 - 2 * r * self.pv + r * r * self.vol2) / self.n
+        se = math.sqrt(max(rv, 0.0) * self.n) / vol
+        return r, se
