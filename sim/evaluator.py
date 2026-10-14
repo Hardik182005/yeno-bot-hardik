@@ -103,3 +103,36 @@ class Position:
             "sell_fees_usd": round(self.sell_fees_usd, 6),
         }
 
+
+@dataclass
+class Result:
+    qualified: bool = False
+    cash: float = START_CASH
+    volume: float = 0.0
+    cycles: int = 0
+    max_drawdown: float = 0.0
+    time_to_target_h: float | None = None
+    flat_at_end: bool = True
+    settled_positions: int = 0
+    rejected: int = 0
+    queries: int = 0
+    losses: int = 0
+    wins: int = 0
+    cycle_pnls: list = field(default_factory=list)
+    errors: int = 0
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "qualified": self.qualified,
+            "cash": round(self.cash, 4),
+            "volume": round(self.volume, 2),
+            "cycles": self.cycles,
+            "maxDD": round(self.max_drawdown, 3),
+            "hours": None if self.time_to_target_h is None else round(self.time_to_target_h, 2),
+            "flat": self.flat_at_end,
+            "settled": self.settled_positions,
+            "rejected": self.rejected,
+            "W/L": f"{self.wins}/{self.losses}",
+        }
+
+
