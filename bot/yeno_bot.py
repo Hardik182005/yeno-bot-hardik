@@ -434,3 +434,158 @@ class Bot:
         return norm_cdf((mean - k) / max(sd, 1e-6))
 
     # ================================================================ variants
+    def _entry(self, v, ctx) -> str | None:
+        """Side to buy for variant v now, or None."""
+        tau = ctx["tau"]
+        if not (v["tau_lo"] < tau <= v["tau_hi"]) or tau <= ENTRY_CUTOFF + 0.5:
+            return None
+        fam = v["fam"]
+        if fam == "LAG":
+            e = self._lag_move(v["lb"], tau, ctx["mid"], ctx["sigma"])
+            if abs(e) < v["edge"]:
+                return None
+            side = "YES" if e > 0 else "NO"
+            asks, bids = ctx["ladders"][side]
+            if not asks or not bids or asks[0][0] - bids[0][0] > v["max_spread"] + 1e-9:
+                return None
+            if not (0.04 <= asks[0][0] <= 0.96):
+                return None
+            return side
+        if fam == "FAV":
+            if self.cycles_in_market[v["id"]] >= v["cycles"]:
+                return None
+            if self.target is None or not self.ref:
+                return None
+            s = self.ref[-1][1]
+            if v["house"]:
+                gap = s - self.target
+                if abs(gap) < v["gap"]:
+                    return None
+            else:
+                gap = s - self.target - (self.basis if self.basis_n >= 3 else 0.0)
+                sd, _ = self._sens(tau, ctx["sigma"])
+                if abs(gap) / sd < v["z"]:
+                    return None
+            side = "YES" if gap >= 0 else "NO"
+            asks, bids = ctx["ladders"][side]
+            if not asks or not bids:
+                return None
+            if not (v["min_ask"] <= asks[0][0] <= v["max_ask"]):
+                return None
+            # immediate round-trip loss cap (House Bot v1)
+            sh, g, f = sim_buy(asks, 5.0)
+            if sh <= 0:
+                return None
+            ss, sg, sf = sim_sell(bids, sh)
+            if ss < sh - 1e-9 or sg - sf - g - f < -v["max_loss"]:
+                return None
+            return side
+        if fam == "LOCK":
+            pu = ctx["p_up"]
+            if pu is None:
+                return None
+            for side, pw in (("YES", pu), ("NO", 1 - pu)):
+                asks, bids = ctx["ladders"][side]
+                if not asks or not bids:
+                    continue
+                a = asks[0][0]
+                if v["min_ask"] <= a <= v["max_ask"] and pw - a >= v["margin"]:
+                    return side
+            return None
+        return None
+
+    def _exit(self, v, pos, ctx) -> bool:
+        """Should a position opened by variant v be sold now?"""
+        tau = ctx["tau"]
+        side = pos["side"]
+        asks, bids = ctx["ladders"][side]
+        if not bids:
+            return False
+        held = ctx["now"] - pos["t"]
+        sold_sh, sg, sf = sim_sell(bids, pos["shares"])
+        pnl = sg - sf - pos["gross"] - pos["fees"]
+        fam = v["fam"]
+        if tau <= 5.0:
+            return True
+        if fam == "LAG":
+            if bids[0][0] <= pos["ask"] - v["stop"]:
+                return True
+            if held >= v["hold"] or held >= 20:
+                return True
+            return pnl >= 0 and sold_sh >= pos["shares"] - 1e-9 and held >= 1.0
+        if fam == "FAV":
+            if sold_sh >= pos["shares"] - 1e-9 and pnl >= -1e-9:
+                return True
+            if pnl <= -v["stop"] * pos["shares"] + 1e-9:
+                return True
+            return tau <= v["forced"]
+        if fam == "LOCK":
+            if bids[0][0] <= pos["ask"] - v["stop"]:
+                return True
+            return tau <= v["exit_tau"] or bids[0][0] >= 0.995
+        return True
+
+    # ================================================================ shadows
+    def _advance_shadows(self, ctx) -> None:
+        now = ctx["now"]
+        for i, v in enumerate(self.variants):
+            sh = self.shadow[i]
+            if sh is None:
+                continue
+            if sh["state"] == "buy":
+                if now < sh["due"]:
+                    continue
+                if ctx["tau"] <= ENTRY_CUTOFF:
+                    self.shadow[i] = None
+                    continue
+                asks, _ = ctx["ladders"][sh["side"]]
+                shares, g, f = sim_buy(asks, sh["budget"])
+                if shares < 5.0:
+                    self.shadow[i] = None
+                    continue
+                sh.update(state="open", shares=shares, gross=g, fees=f, t=sh["t"], ask=asks[0][0])
+                continue
+            if sh["state"] == "open":
+                if self._exit(v, sh, ctx):
+                    sh["state"] = "sell"
+                    sh["due"] = now + LATENCY
+                continue
+            if sh["state"] == "sell" and now >= sh["due"]:
+                _, bids = ctx["ladders"][sh["side"]]
+                sold, sg, sf = sim_sell(bids, sh["shares"])
+                if sold <= 0:
+                    sh["state"] = "open"
+                    continue
+                sh["shares"] -= sold
+                sh["sgross"] = sh.get("sgross", 0.0) + sg
+                sh["sfees"] = sh.get("sfees", 0.0) + sf
+                if sh["shares"] <= 1e-6:
+                    pnl = sh["sgross"] - sh["sfees"] - sh["gross"] - sh["fees"]
+                    self.stats[i].add(pnl, sh["gross"] + sh["sgross"], now - sh["t"], sh["gross"] + sh["fees"])
+                    self.shadow[i] = None
+                    self.cool_until[i] = now + 1.0
+                else:
+                    sh["state"] = "open"
+
+    def _settle_shadows(self) -> None:
+        """Market changed: unsold shadow inventory settles with zero volume."""
+        for i, sh in enumerate(self.shadow):
+            if sh is None or sh["state"] == "buy":
+                self.shadow[i] = None
+                continue
+            won = (self.last_mid >= 0.5) == (sh["side"] == "YES") if self.p["settle_guess"] else False
+            pnl = sh.get("sgross", 0.0) - sh.get("sfees", 0.0) + (sh["shares"] if won else 0.0) \
+                - sh["gross"] - sh["fees"]
+            self.stats[i].add(pnl, 0.0, 300.0, sh["gross"] + sh["fees"])
+            self.shadow[i] = None
+
+    # ================================================================ selection
+    def _score(self, i: int) -> tuple[float, float]:
+        r, se = self.stats[i].ratio(self.p["prior_r"], self.p["prior_weight_usd"])
+        return r, r - self.p["lcb_k"] * se
+
+    def _allowed_cost(self, cash: float, volume: float) -> float:
+        need = max(1000.0 - volume, 10.0)
+        return max(cash - self.p["reserve_usd"], 0.0) / need
+
+    # ================================================================ main
