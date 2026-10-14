@@ -1,0 +1,8 @@
+### --scenario bnf@3.0
+== yeno_bot.py [bnf@3.0] paths=5 qualified=5 medianVol=1004.1 bestVol=1023.6 medianCash=116.33 qualCash med=116.33 min=45.08 max=243.18 hours med=5.1
+### --scenario cl@2.0
+== yeno_bot.py [cl@2.0] paths=1 qualified=0 medianVol=225.4 bestVol=225.4 medianCash=7.36 
+== yeno_bot.py [bnf@1.5] paths=16 qualified=16 medianVol=1004.5 bestVol=1029.7 medianCash=84.29 qualCash med=84.29 min=26.17 max=211.48 hours med=10.9
+== variant-urgency-sizing (rejected) [bnf@1.5] paths=16 qualified=16 medianVol=1004.8 bestVol=1011.5 medianCash=66.54 qualCash med=66.54 min=26.17 max=210.18 hours med=10.1
+
+[exited with code 0]
