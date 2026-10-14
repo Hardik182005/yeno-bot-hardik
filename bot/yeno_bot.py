@@ -99,3 +99,38 @@ def default_variants() -> list[dict[str, Any]]:
     for i, x in enumerate(v):
         x["id"] = i
     return v
+
+def sim_buy(asks, budget: float):
+    """Evaluator-style market buy for a fee-inclusive budget -> (shares, gross, fees)."""
+    fills = []
+    left = budget
+    for p, s in asks:
+        unit = p * (1 + OVERLAY) + PROTOCOL * p * (1 - p)
+        q = math.floor(min(s, left / unit) * 100 + 1e-9) / 100
+        if q <= 0:
+            break
+        fills.append((p, q))
+        left -= q * unit
+        if q < s:
+            break
+    while fills and sum(p * q for p, q in fills) + fees(fills) > budget + 1e-9:
+        p, q = fills[-1]
+        q = round(q - 0.01, 2)
+        if q <= 0:
+            fills.pop()
+        else:
+            fills[-1] = (p, q)
+    sh = sum(q for _, q in fills)
+    return sh, sum(p * q for p, q in fills), fees(fills)
+
+def sim_sell(bids, shares: float):
+    """Evaluator-style market sell -> (shares sold, gross, fees)."""
+    fills = []
+    left = shares
+    for p, s in bids:
+        q = min(s, left)
+        fills.append((p, q))
+        left -= q
+        if left <= 1e-9:
+            break
+    return sum(q for _, q in fills), sum(p * q for p, q in fills), fees(fills)
