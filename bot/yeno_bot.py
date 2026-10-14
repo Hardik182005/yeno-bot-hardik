@@ -62,13 +62,13 @@ def fees(fills: list[tuple[float, float]]) -> float:
 
 def default_variants() -> list[dict[str, Any]]:
     v: list[dict[str, Any]] = []
-    # LAG: reference move over lb seconds, predicted mid move >= edge
+    # LAG
     for lb in (1.5, 3.0):
         for edge in (0.06, 0.12, 0.2, 0.3, 0.45):
             for hold in (2.0, 5.0):
                 v.append({"fam": "LAG", "lb": lb, "edge": edge, "hold": hold,
                           "tau_lo": 20.0, "tau_hi": 280.0, "stop": 0.10, "max_spread": 0.03})
-    # FAV: House Bot v1 baseline, neighbourhood, and volatility-scaled versions
+    # FAV
     v.append({"fam": "FAV", "house": True, "tau_lo": 15.0, "tau_hi": 90.0, "gap": 50.0,
               "max_ask": 0.90, "min_ask": 0.0, "stop": 0.10, "forced": 60.0, "max_loss": 0.40,
               "cycles": 2})
@@ -91,6 +91,11 @@ def default_variants() -> list[dict[str, Any]]:
         v.append({"fam": "FAV", "house": False, "tau_lo": tlo, "tau_hi": thi, "z": z,
                   "min_ask": lo, "max_ask": hi, "stop": 0.10, "forced": max(tlo - 10.0, 8.0),
                   "max_loss": 0.40, "cycles": 3})
+    # LOCK: settlement-TWAP model probability
+    for margin in (0.03, 0.06):
+        for lo in (0.60, 0.85):
+            v.append({"fam": "LOCK", "margin": margin, "min_ask": lo, "max_ask": 0.985,
+                      "tau_lo": 16.0, "tau_hi": 55.0, "exit_tau": 4.0, "stop": 0.15})
     for i, x in enumerate(v):
         x["id"] = i
     return v
