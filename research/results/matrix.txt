@@ -1,0 +1,45 @@
+### --scenario bnf@2.0
+ml-1781481600 288 {"qualified": true, "cash": 29.9911, "volume": 1007.17, "cycles": 101, "maxDD": 2.848, "hours": 1.8, "flat": true, "settled": 0, "rejected": 3, "W/L": "79/22"}
+btc-updown-5m-1790812800 288 {"qualified": true, "cash": 109.5469, "volume": 1005.38, "cycles": 104, "maxDD": 3.59, "hours": 2.08, "flat": true, "settled": 0, "rejected": 2, "W/L": "85/19"}
+btc-updown-5m-1791035700 288 {"qualified": true, "cash": 222.0447, "volume": 1000.59, "cycles": 97, "maxDD": 8.977, "hours": 10.2, "flat": true, "settled": 0, "rejected": 3, "W/L": "65/32"}
+btc-updown-5m-1791122100 288 {"qualified": true, "cash": 204.4307, "volume": 1003.36, "cycles": 96, "maxDD": 11.096, "hours": 12.57, "flat": true, "settled": 0, "rejected": 3, "W/L": "64/32"}
+btc-updown-5m-1791208800 279 {"qualified": true, "cash": 167.7847, "volume": 1000.49, "cycles": 97, "maxDD": 6.92, "hours": 10.51, "flat": true, "settled": 1, "rejected": 3, "W/L": "71/26"}
+== yeno_bot.py [bnf@2.0] paths=5 qualified=5 medianVol=1003.4 bestVol=1007.2 medianCash=167.78 qualCash med=167.78 min=29.99 max=222.04 hours med=10.2
+### --scenario bnf@0
+ml-1781481600 288 {"qualified": false, "cash": 9.361, "volume": 8.73, "cycles": 3, "maxDD": 0.639, "hours": null, "flat": true, "settled": 0, "rejected": 0, "W/L": "0/3"}
+btc-updown-5m-1790812800 288 {"qualified": false, "cash": 7.2479, "volume": 6.64, "cycles": 1, "maxDD": 2.752, "hours": null, "flat": true, "settled": 0, "rejected": 0, "W/L": "0/1"}
+btc-updown-5m-1791035700 288 {"qualified": false, "cash": 2.8887, "volume": 265.57, "cycles": 53, "maxDD": 8.029, "hours": null, "flat": true, "settled": 1, "rejected": 6, "W/L": "32/21"}
+btc-updown-5m-1791122100 288 {"qualified": false, "cash": 5.8784, "volume": 61.08, "cycles": 29, "maxDD": 4.122, "hours": null, "flat": true, "settled": 0, "rejected": 5, "W/L": "10/19"}
+btc-updown-5m-1791208800 279 {"qualified": false, "cash": 3.0225, "volume": 255.46, "cycles": 33, "maxDD": 6.978, "hours": null, "flat": true, "settled": 0, "rejected": 0, "W/L": "15/18"}
+== yeno_bot.py [bnf@0] paths=5 qualified=0 medianVol=61.1 bestVol=265.6 medianCash=5.88 
+### --scenario bnf@1.0
+ml-1781481600 288 {"qualified": true, "cash": 16.8218, "volume": 1006.3, "cycles": 112, "maxDD": 5.177, "hours": 3.95, "flat": true, "settled": 0, "rejected": 8, "W/L": "53/59"}
+btc-updown-5m-1790812800 288 {"qualified": true, "cash": 128.6324, "volume": 1005.42, "cycles": 123, "maxDD": 5.235, "hours": 20.28, "flat": true, "settled": 0, "rejected": 10, "W/L": "77/46"}
+btc-updown-5m-1791035700 288 {"qualified": true, "cash": 149.8212, "volume": 1010.26, "cycles": 109, "maxDD": 11.946, "hours": 13.55, "flat": true, "settled": 0, "rejected": 1, "W/L": "60/49"}
+btc-updown-5m-1791122100 288 {"qualified": false, "cash": 44.0048, "volume": 968.95, "cycles": 186, "maxDD": 12.993, "hours": null, "flat": true, "settled": 0, "rejected": 14, "W/L": "85/101"}
+btc-updown-5m-1791208800 279 {"qualified": true, "cash": 82.2703, "volume": 1002.76, "cycles": 162, "maxDD": 25.966, "hours": 19.45, "flat": true, "settled": 2, "rejected": 10, "W/L": "85/77"}
+== yeno_bot.py [bnf@1.0] paths=5 qualified=4 medianVol=1005.4 bestVol=1010.3 medianCash=82.27 qualCash med=105.45 min=16.82 max=149.82 hours med=16.5
+### --scenario cl@0
+btc-updown-5m-1790812800 288 {"qualified": false, "cash": 10.0366, "volume": 10.02, "cycles": 1, "maxDD": 0.0, "hours": null, "flat": true, "settled": 0, "rejected": 0, "W/L": "1/0"}
+== yeno_bot.py [cl@0] paths=1 qualified=0 medianVol=10.0 bestVol=10.0 medianCash=10.04 
+### --scenario bnf_k@0
+btc-updown-5m-1790812800 288 {"qualified": false, "cash": 10.0, "volume": 0.0, "cycles": 0, "maxDD": 0.0, "hours": null, "flat": true, "settled": 0, "rejected": 0, "W/L": "0/0"}
+== yeno_bot.py [bnf_k@0] paths=1 qualified=0 medianVol=0.0 bestVol=0.0 medianCash=10.00 
+### --scenario bnf@2.0 --adverse 0.02
+ml-1781481600 288 {"qualified": false, "cash": 0.7874, "volume": 148.41, "cycles": 42, "maxDD": 9.213, "hours": null, "flat": true, "settled": 0, "rejected": 72, "W/L": "18/24"}
+btc-updown-5m-1790812800 288 {"qualified": true, "cash": 66.9096, "volume": 1004.14, "cycles": 119, "maxDD": 10.528, "hours": 3.3, "flat": true, "settled": 0, "rejected": 15, "W/L": "77/42"}
+btc-updown-5m-1791035700 288 {"qualified": true, "cash": 135.3477, "volume": 1003.62, "cycles": 134, "maxDD": 17.521, "hours": 18.38, "flat": true, "settled": 1, "rejected": 15, "W/L": "71/63"}
+btc-updown-5m-1791122100 288 {"qualified": true, "cash": 122.2421, "volume": 1001.02, "cycles": 138, "maxDD": 20.691, "hours": 21.81, "flat": true, "settled": 0, "rejected": 26, "W/L": "65/73"}
+btc-updown-5m-1791208800 279 {"qualified": false, "cash": 2.0032, "volume": 288.58, "cycles": 113, "maxDD": 17.126, "hours": null, "flat": true, "settled": 3, "rejected": 77, "W/L": "43/70"}
+== yeno_bot.py [bnf@2.0] paths=5 qualified=3 medianVol=1001.0 bestVol=1004.1 medianCash=66.91 qualCash med=122.24 min=66.91 max=135.35 hours med=18.4
+### --scenario bnf@3.0
+ml-1781481600 288 {"qualified": true, "cash": 45.0779, "volume": 1001.8, "cycles": 101, "maxDD": 3.981, "hours": 2.53, "flat": true, "settled": 0, "rejected": 2, "W/L": "84/17"}
+btc-updown-5m-1790812800 288 {"qualified": true, "cash": 116.3282, "volume": 1000.12, "cycles": 97, "maxDD": 1.53, "hours": 1.87, "flat": true, "settled": 0, "rejected": 2, "W/L": "87/10"}
+btc-updown-5m-1791035700 288 {"qualified": true, "cash": 243.1812, "volume": 1023.56, "cycles": 98, "maxDD": 5.081, "hours": 10.07, "flat": true, "settled": 1, "rejected": 2, "W/L": "70/28"}
+btc-updown-5m-1791122100 288 {"qualified": true, "cash": 189.1143, "volume": 1004.07, "cycles": 102, "maxDD": 6.172, "hours": 8.18, "flat": true, "settled": 0, "rejected": 4, "W/L": "79/23"}
+btc-updown-5m-1791208800 279 {"qualified": true, "cash": 78.5874, "volume": 1011.51, "cycles": 110, "maxDD": 7.661, "hours": 5.13, "flat": true, "settled": 1, "rejected": 8, "W/L": "79/31"}
+== yeno_bot.py [bnf@3.0] paths=5 qualified=5 medianVol=1004.1 bestVol=1023.6 medianCash=116.33 qualCash med=116.33 min=45.08 max=243.18 hours med=5.1
+### --scenario cl@2.0
+btc-updown-5m-1790812800 288 {"qualified": false, "cash": 7.3555, "volume": 225.39, "cycles": 23, "maxDD": 3.697, "hours": null, "flat": true, "settled": 0, "rejected": 1, "W/L": "15/8"}
+== yeno_bot.py [cl@2.0] paths=1 qualified=0 medianVol=225.4 bestVol=225.4 medianCash=7.36 
+DONE
