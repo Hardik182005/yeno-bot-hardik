@@ -589,3 +589,156 @@ class Bot:
         return max(cash - self.p["reserve_usd"], 0.0) / need
 
     # ================================================================ main
+    def _decide(self, obs: dict[str, Any]) -> dict[str, Any]:
+        p = self.p
+        now = float(obs["timestamp"])
+        if self.first_t is None:
+            self.first_t = now
+        market = obs["market"]
+        account = obs["account"]
+        tau = float(market["secondsToClose"])
+        mid_id = str(market["id"])
+        ref = obs.get("reference")
+        self._update_reference(ref, now)
+        if mid_id != self.market_id:
+            if self.market_id is not None:
+                self._settle_shadows()
+            self._new_market(mid_id, now, tau, ref)
+        self.market_end = now + tau
+        self._observe_target(ref, now)
+
+        books = obs.get("books") or {}
+        yes, no = books.get("YES") or {}, books.get("NO") or {}
+        lad = {
+            "YES": (levels(yes.get("asks"), False), levels(yes.get("bids"), True)),
+            "NO": (levels(no.get("asks"), False), levels(no.get("bids"), True)),
+        }
+        ya, yb = lad["YES"]
+        if ya and yb:
+            mid = (ya[0][0] + yb[0][0]) / 2
+        elif yb:
+            mid = max(yb[0][0], 0.5)
+        elif ya:
+            mid = min(ya[0][0], 0.5)
+        else:
+            mid = self.last_mid
+        self.last_mid = mid
+        sigma = self._sigma()
+        ref_ok = bool(self.ref) and now - self.ref[-1][0] <= p["max_ref_age"]
+        ctx = {"now": now, "tau": tau, "mid": mid, "sigma": sigma, "ladders": lad,
+               "p_up": self._p_up(now, tau, sigma) if ref_ok else None}
+
+        # ---- shadows: progress existing, then open new ones
+        self._advance_shadows(ctx)
+        if ref_ok and ya and yb:
+            for i, v in enumerate(self.variants):
+                if self.shadow[i] is None and now >= self.cool_until[i]:
+                    side = self._entry(v, ctx)
+                    if side:
+                        self.shadow[i] = {"state": "buy", "side": side, "due": now + LATENCY,
+                                          "budget": 5.0, "t": now}
+                        self.cycles_in_market[i] += 1
+
+        if not p["live"]:
+            return {"action": "HOLD"}
+
+        # ---- live position management
+        position = account.get("position")
+        cash_now = float(account.get("cashUsd", 0))
+        vol_now = float(account.get("eligibleVolumeUsd", 0))
+        if position is None and self.had_position:
+            if self.live_vid is not None:
+                i = self.live_vid
+                self.live_stats[i].add(cash_now - self.live_cash_at_buy, vol_now - self.live_vol_at_buy, 0.0)
+                ls = self.live_stats[i]
+                if ls.raw_n >= 2 and ls.pnl < -p["ban_live_loss"]:
+                    self.banned[i] = True
+                if ls.raw_n >= p["ban_live_cycles"] and ls.vol > 0:
+                    if ls.pnl / ls.vol < -self._allowed_cost(cash_now, vol_now) - p["ban_margin"]:
+                        self.banned[i] = True
+            self.live_vid = None
+        self.had_position = position is not None
+        if position is not None:
+            side = str(position.get("outcome"))
+            shares = float(position.get("shares", 0))
+            if shares <= 0:
+                return {"action": "HOLD"}
+            vid = self.live_vid if self.live_vid is not None else 0
+            pos = {"side": side, "shares": shares, "t": self.live_entry_t, "ask": self.live_entry_ask,
+                   "gross": float(position.get("buy_gross_usd", 0)) - float(position.get("sell_gross_usd", 0)),
+                   "fees": float(position.get("buy_fees_usd", 0)) - float(position.get("sell_fees_usd", 0))}
+            if self._exit(self.variants[vid], pos, ctx):
+                return {"action": "SELL"}
+            return {"action": "HOLD"}
+
+        # ---- live entry: best approved variant whose signal fires now
+        if not ref_ok or tau <= ENTRY_CUTOFF + 0.5:
+            return {"action": "HOLD"}
+        cash = cash_now
+        volume = vol_now
+        allowed = self._allowed_cost(cash, volume)
+        hours = (now - self.first_t) / 3600.0
+        need_rate = max(1000.0 - volume, 0.0) / max(p["pace_hours"] - hours, 1.0)
+        plan = 1000.0 * min(1.0, hours / p["pace_hours"])
+        # rescue: not qualifying scores nothing, so late and far behind, use the mean
+        # estimate with a looser budget instead of the confidence bound
+        rescue = hours >= p["rescue_hour"] and volume < p["rescue_behind"] * plan
+        cands = []
+        for i, v in enumerate(self.variants):
+            if self.banned[i] or self.stats[i].raw_n < p["min_cycles"] or self.stats[i].raw_vol < p["min_shadow_vol"]:
+                continue
+            r, lcb = self._score(i)
+            if rescue:
+                lcb = r
+                if r < -1.5 * allowed - 0.003:
+                    continue
+            elif lcb < -allowed:
+                continue
+            if cash < p["brake_cash"] and lcb < 0:
+                continue
+            cands.append((lcb, i, self.stats[i].rate_per_hour(hours)))
+        cands.sort(reverse=True)
+        # smallest prefix (best first) that is fast enough to meet the schedule
+        chosen = []
+        fastest = 0.0
+        for lcb, i, rate in cands:
+            chosen.append(i)
+            fastest = max(fastest, rate)
+            if fastest >= need_rate * p["rate_safety"]:
+                break
+        best = None
+        for i in chosen:  # chosen is ordered best first
+            side = self._entry(self.variants[i], ctx)
+            if side:
+                best = (0.0, i, side)
+                break
+        if best is None:
+            return {"action": "HOLD"}
+        _, i, side = best
+        rsd = max(self.stats[i].ret_sd(), 0.02)
+        budget = min(5.0, cash - 0.02, p["risk_frac"] * cash / rsd)
+        asks, _ = lad[side]
+        sh, g, f = sim_buy(asks, budget)
+        if sh < 5.0 * 1.01:
+            return {"action": "HOLD"}
+        self.live_vid = i
+        self.live_cash_at_buy = cash
+        self.live_vol_at_buy = volume
+        self.live_entry_t = now
+        self.live_entry_ask = asks[0][0]
+        return {"action": "BUY", "outcome": side, "maxCashUsd": round(budget, 4)}
+
+    # ================================================================ diagnostics
+    def report(self) -> list[dict[str, Any]]:
+        out = []
+        for i, v in enumerate(self.variants):
+            r, lcb = self._score(i)
+            s = self.stats[i]
+            ls = self.live_stats[i]
+            out.append({"id": i, "fam": v["fam"], "n": s.raw_n, "r": round(r, 4), "lcb": round(lcb, 4),
+                        "live_n": ls.raw_n, "live_pnl": round(ls.pnl, 3), "banned": self.banned[i],
+                        "vol": round(s.vol, 1), "pnl": round(s.pnl, 3),
+                        "v": {k: x for k, x in v.items() if k not in ("fam", "id")}})
+        return out
+
+
