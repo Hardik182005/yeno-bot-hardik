@@ -30,7 +30,7 @@ I would like to submit my entry for the YeNo × Builderr Volume Bot Challenge.
 
 Name: Hardik
 GitHub Account: Hardik182005
-Contact Email: 148485624+Hardik182005@users.noreply.github.com
+Contact Email: hardikhinduja399@gmail.com
 Bot Name: YeNo Adaptive Multi-Strategy Volume Bot
 GitHub Repository: https://github.com/Hardik182005/yeno-bot-hardik
 Immutable Commit Hash: <COMMIT_SHA_PLACEHOLDER>

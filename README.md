@@ -33,7 +33,7 @@ $$\text{Final Cash} \approx \$10.00 + \$1,000 \times r$$
 
 where $r = \frac{\text{Net PnL}}{\text{Volume}}$ is the net cost or profit per dollar of volume. 
 
-A naive market-taking or random volume generator produces $r \approx -0.025$ to $-0.040$, going bankrupt within 30 to 50 cycles. **To qualify and rank high, the bot must generate organic trading alpha net of spread and protocol fees** to offset the 1% overlay and finish with positive cash.
+Because the 1% overlay and Polymarket protocol fees impose a constant drag on every turnover, a bot lacking predictive alpha will steadily deplete its bankroll. **To qualify and rank high, the bot must generate organic trading alpha net of spread and protocol fees** to offset the 1% overlay and finish with positive cash.
 
 ---
 
@@ -120,7 +120,7 @@ The 35 internal shadow-traded variants belong to three distinct alpha families:
 * **Mechanism:** In the final 60 seconds, a fraction $\tau / 60$ of the settlement TWAP is already finalized and observable:
   $$\text{TWAP}_{60} = \frac{1}{60} \left( \int_0^\tau P(s) ds + (60 - \tau) \bar{P}_{\text{rem}} \right)$$
   The bot uses Acklam’s inverse normal approximation and Gaussian terminal variance to calculate the closed-form probability $P(\text{TWAP}_{60} \ge K)$. When this theoretical probability exceeds the best ask by a positive safety margin, it buys.
-* **Exit:** Closes position into the final seconds as the book converges to 0.995+, or redeems at settlement.
+* **Exit:** Closes position into the final seconds as the book converges toward fair value; strictly liquidates via market SELL by 5 seconds before close ($T - 5\text{ s}$) to prevent holding into settlement.
 
 ---
 
@@ -154,9 +154,9 @@ The competition ranks entrants by **cash at the moment $1,000 volume is achieved
 
 ---
 
-## 5. Local Evaluator & Replay Framework
+## 5. Local Simulator & Replay Framework
 
-The `sim/` module provides a byte-accurate re-implementation of the official YeNo evaluator contract:
+The `sim/` module provides a custom local simulation harness built directly from the rules and evaluator contract specifications (developed to test fill mechanics, dynamic fees, and latency models, though not an official replica):
 - **250 ms L2 Latency:** Decisions are filled against book states observed $\ge 250$ ms later.
 - **Ladder Walking:** Matches partial orders against depth levels; rejects undersized orders ($< \text{minOrderSize}$).
 - **Fee Accounting:** 5-decimal place rounding matching the competition engine.
@@ -174,21 +174,24 @@ All experiments simulate complete 24-hour continuous sessions ($288 \times 5\tex
 
 ### Comprehensive Scenario Matrix
 
-| Scenario | Description | Paths | Qualification Rate | Median Final Cash | Min Cash | Max Cash | Median Hours to $1,000 |
+| Scenario | Description | Paths | Qualification Rate | Median Final Cash (All Paths) | Min Cash | Max Cash | Median Hours to $1,000 |
 |:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|
 | **`bnf@1.5`** | Binance ref, 1.5s book lag (16-path bootstrap) | 16 | **100% (16/16)** | **$84.29** | $26.17 | $211.48 | 10.9 h |
 | **`bnf@2.0`** | Binance ref, 2.0s book lag (real days) | 5 | **100% (5/5)** | **$167.78** | $29.99 | $222.04 | 10.2 h |
 | **`bnf@3.0`** | Binance ref, 3.0s book lag | 5 | **100% (5/5)** | **$116.33** | $45.08 | $243.18 | 5.1 h |
-| **`bnf@1.0`** | Binance ref, 1.0s book lag | 5 | **80% (4/5)** | **$105.45** | $16.82 | $149.82 | 16.5 h |
-| **`bnf@2.0 + adverse`** | 2.0s lag + 2¢ adverse fill penalty | 5 | **60% (3/5)** | **$122.24** | $66.91 | $135.35 | 18.4 h |
-| **`bnf@0` / Colocated** | Colocated book (no latency lead) | 5 | 0% (Capital Preserved) | $5.88 | $2.89 | $9.36 | — |
-| **`cl@0` / Chainlink** | Pure Chainlink feed (zero lag) | 1 | 0% (Capital Preserved) | $10.04 | $10.04 | $10.04 | — |
+| **`bnf@1.0`** | Binance ref, 1.0s book lag | 5 | **80% (4/5)** | **$82.27** ($105.45 qual) | $16.82 | $149.82 | 16.5 h |
+| **`bnf@2.0 + adverse`** | 2.0s lag + 2¢ adverse fill penalty | 5 | **60% (3/5)** | **$66.91** ($122.24 qual) | $0.79 | $135.35 | 18.4 h |
+| **`bnf@0` / Colocated** | Colocated book (no latency lead) | 5 | 0% (0/5) | $5.88 | $2.89 | $9.36 | — |
+| **`cl@0` / Chainlink (0s)**| Chainlink reference (zero lag) | 1 | 0% (0/1) | $10.04 | $10.04 | $10.04 | — |
+| **`cl@2.0` / Chainlink (2s)**| Chainlink reference (2.0s lag) | 1 | 0% (0/1) | $7.36 | $7.36 | $7.36 | — |
 
-*Note: In zero-edge scenarios (`bnf@0` and `cl@0`), the bot's statistical filters detect negative expectancy within 30 cycles and halt trading, successfully preserving the majority of capital ($5.88 to $10.04) rather than going bankrupt.*
+*Notes on Empirical Results:*
+- **All-Path Medians:** Across all simulated days, median final cash is **$82.27** for `bnf@1.0` (or $105.45 if restricted only to the 4 qualifying days) and **$66.91** for `bnf@2.0 + adverse` (or $122.24 if restricted only to the 3 qualifying days).
+- **Zero-Edge Regimes:** In scenarios where no tradeable latency edge exists (`bnf@0` and `cl@2.0`), the bot cannot overcome the 1% fee overlay. In the colocated case (`bnf@0`), the bot falls to a median of $5.88 ($2.89 worst case, losing approximately 40% of starting bankroll) before statistical ratio bounds and the $6.00 capital preservation brake halt further live risk. Under `cl@2.0`, it finishes at $7.36 ($225.40 volume). In `cl@0`, it stays flat at $10.04.
 
 ### Comparison Against House Bot v1
-- **House Bot v1:** Qualified on **0 of 5** local replay days (max volume reached: $127 in 24 h). The competition organizers also report **0 qualifiers in 30 development paths**.
-- **YeNo Adaptive Bot:** Qualified on **16 of 16** bootstrap paths under realistic recorder delays, generating up to **+$212 profit on a $10 bankroll**.
+- **House Bot v1:** Qualified on **0 of 5** local replay days. The competition organizers similarly report **0 qualifiers in 30 development paths** for the baseline bot.
+- **YeNo Adaptive Bot:** Qualified on **16 of 16** bootstrap paths under realistic recorder delays (1.5s lag), achieving a best finish of **$211.48 cash (~$201 profit on the $10 starting bankroll)**.
 
 ---
 
@@ -246,6 +249,7 @@ docker run --rm --network none -p 8080:8080 yeno-volume-bot
 ## 8. Repository Structure
 
 ```
+├── LICENSE                         # MIT License
 ├── Dockerfile                      # Hardened container image (Python 3.12-slim, non-root)
 ├── README.md                       # Architecture, strategy formulas, benchmarks
 ├── SUBMISSION.md                   # Submission verification checklist & email draft
@@ -254,7 +258,7 @@ docker run --rm --network none -p 8080:8080 yeno-volume-bot
 ├── bot/
 │   └── yeno_bot.py                 # Core submission bot (standard library only)
 ├── sim/
-│   ├── evaluator.py                # Byte-accurate local evaluator & L2 order matcher
+│   ├── evaluator.py                # Local evaluator & L2 order matcher
 │   ├── scenarios.py                # Market latency & feed perturbation models
 │   ├── binance.py                  # Binance 1s spot kline client & cache
 │   ├── prep_pmdata.py              # PMData tick dataset converter
@@ -278,6 +282,6 @@ docker run --rm --network none -p 8080:8080 yeno-volume-bot
 
 * **Repository:** [https://github.com/Hardik182005/yeno-bot-hardik](https://github.com/Hardik182005/yeno-bot-hardik)
 * **Author:** Hardik (`Hardik182005`)
-* **Contact:** `148485624+Hardik182005@users.noreply.github.com`
+* **Contact:** `hardikhinduja399@gmail.com`
 * **Entry Point:** `python3 bot/yeno_bot.py` (`POST /decide` on port 8080)
 * **Dependencies:** None (Pure Python $\ge 3.8$ standard library)
